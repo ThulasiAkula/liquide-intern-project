@@ -1,0 +1,13 @@
+.venv/
+myenv
+.env
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pkl
+*.index
+*.faiss
