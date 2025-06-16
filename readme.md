@@ -13,7 +13,6 @@ An offline-first, Streamlit-based glossary lookup tool for financial terms. It u
 * **Edge-Case Handling**:
 
   * Vague queries prompt clarification.
-  * Unmatched terms yield a polite suggestion to search for a valid financial term from the glossary.
 
 ---
 
