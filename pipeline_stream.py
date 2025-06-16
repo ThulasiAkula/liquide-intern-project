@@ -26,17 +26,17 @@ def load_lines(path: str):
 # Identify glossary term lines
 
 def is_term_line(line: str) -> bool:
-    # Exclude single-letter section headers
+    
     if len(line) == 1 and line.isupper():
         return False
-    # Exclude lines ending with sentence punctuation
+   
     if line[-1] in ".?!;:,":
         return False
-    # Exclude very long lines (likely definitions)
+  
     words = line.split()
     if len(words) > 6:
         return False
-    # Must start with an uppercase letter
+
     if not line[0].isalpha() or not line[0].isupper():
         return False
     return True

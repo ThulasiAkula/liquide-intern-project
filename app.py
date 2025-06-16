@@ -1,68 +1,48 @@
+
 import streamlit as st
 import re
-from agent import retrieve
+from agent import retrieve_multiple  
 
 st.set_page_config(page_title="Liquide Glossary Search", layout="wide")
 st.title("🔎 Liquide Glossary Search")
 
-
+# Helper to ignore page numbers or section labels
 def is_page_marker(s: str) -> bool:
-    """
-    Returns True if the string is a standalone page number or page marker like '49' or '49 N'.
-    """
     return bool(re.fullmatch(r"\d+\s*[A-Z]?", s.strip()))
 
+# Text input from user
 query = st.text_input("Ask your question:")
+
+# If query exists, search and display results
 if query:
     with st.spinner("Searching…"):
-        ans = retrieve(query)
+        results = retrieve_multiple(query) 
 
-    source = ans.get("source")
-    # Exact PDF lookup
-    if source == "PDF":
-        term = ans.get("term", "").strip() or query
-        definition = ans.get("text", "").strip()
-        st.subheader(term)
+    for subquery, ans in results:
+        source = ans.get("source")
 
-        # Split into sentences
-        sentences = re.split(r'(?<=[\.\!?])\s+', definition)
-        # Filter out page markers
-        filtered = [sent.strip() for sent in sentences if sent.strip() and not is_page_marker(sent)]
+        if source == "PDF":
+            term = ans.get("term", "").strip() or subquery
+            definition = ans.get("text", "").strip()
+            st.subheader(term)
 
-        # If multiple sentences or long text, bullet-point
-        if len(filtered) > 1 or len(" ".join(filtered)) > 100:
-            for sent in filtered:
-                st.markdown(f"- {sent}")
-        else:
-            # Single short definition
-            if filtered:
-                st.write(filtered[0])
+            # Clean and format definition text
+            sentences = re.split(r'(?<=[\.!?])\s+', definition)
+            filtered = [s.strip() for s in sentences if s and not is_page_marker(s)]
+
+            if len(filtered) > 1 or len(" ".join(filtered)) > 100:
+                for sent in filtered:
+                    st.markdown(f"- {sent}")
             else:
-                st.write("")
+                st.write(filtered[0] if filtered else "")
 
-    # DuckDuckGo web summary (only if summary mentions query)
-    elif source == "Web":
-        st.subheader("🌐 Web Summary")
-        summary = ans.get("text", "").strip()
-        # If the summary does not mention the query term, treat as no match
-        #if query.lower() not in summary.lower():
-            #st.warning("I'm sorry, I wasn't able to find that term. Please verify the spelling and try again with the specific financial term.")
-        #else:
-        sentences = re.split(r'(?<=[\.\!?])\s+', summary)
-        for sent in sentences:
-            sent = sent.strip()
-            if sent:
-                st.markdown(f"- {sent}")
+        elif source == "Web":
+            st.subheader(f"🌐 Web Summary for '{subquery}'")
+            summary = ans.get("text", "").strip()
+            for sent in re.split(r'(?<=[\.!?])\s+', summary):
+                sent = sent.strip()
+                if sent:
+                    st.markdown(f"- {sent}")
 
-
-    # Edge-case: no result or vague query
-    elif source == "None":
-        message = ans.get("text", "")
-        if "clarify" in message.lower():
-            st.info(message)
-        else:
-            st.warning("I'm sorry, I wasn't able to find that term. Please verify the spelling and try again with the specific financial term.")
-
-    # Fallback for unexpected sources
-    else:
-        st.error("Unexpected response. Please try again.")
+        elif source == "None":
+            st.warning(f"No answer found for \"{subquery}\". Please check your input.")

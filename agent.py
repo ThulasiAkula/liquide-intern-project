@@ -1,19 +1,15 @@
-# agent.py
-
 import os
 import pickle
 import re
-
 import faiss
 from sentence_transformers import SentenceTransformer
 from duckduckgo_search import DDGS
 
-# —————————————————————————————————————————
-# 1) Load persisted FAISS index + entries
-# —————————————————————————————————————————
+# File paths
 INDEX_PATH = "faiss.index"
 CHUNKS_PATH = "chunks.pkl"
 
+# Load index and glossary
 if os.path.exists(INDEX_PATH) and os.path.exists(CHUNKS_PATH):
     index = faiss.read_index(INDEX_PATH)
     with open(CHUNKS_PATH, "rb") as f:
@@ -21,62 +17,74 @@ if os.path.exists(INDEX_PATH) and os.path.exists(CHUNKS_PATH):
 else:
     raise RuntimeError("Run pipeline_stream.py first to build the FAISS index and chunks.pkl")
 
-# —————————————————————————————————————————
-# 2) Build an exact-match dictionary from your glossary
-# —————————————————————————————————————————
-# entries are of the form "Term[\\n]Definition"
+# Build glossary dictionary
 entry_dict = {}
 for e in entries:
     term_full, definition = e.split("\n", 1)
     term_full = term_full.strip()
     definition = definition.strip()
-
-    # 1) map the full header (including parentheses)
     entry_dict[term_full.lower()] = definition
 
-    # 2) also map the “main” term with any (…)-suffix stripped
+    # Also support stripped versions like "EPS (Adjusted)" → "EPS"
     main = re.sub(r"\s*\(.*?\)", "", term_full).strip().lower()
     if main and main not in entry_dict:
         entry_dict[main] = definition
 
-# —————————————————————————————————————————
-# 3) Embedding model
-# —————————————————————————————————————————
+# Load SentenceTransformer model
 embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-# —————————————————————————————————————————
-# 4) Fallback summarizer for web results
-# —————————————————————————————————————————
-def simple_summarize(text: str, num_sentences: int = 3) -> str:
-    # naive sentence split
-    sents = re.split(r'(?<=[\.!?])\s+', text.strip())
-    return " ".join(sents[:num_sentences]).strip()
 
-# —————————————————————————————————————————
-# 5) Main retrieve() function
-# —————————————————————————————————————————
+#   Helper: Split multi-term queries
+def split_query(query: str):
+    query = query.lower().replace("what is", "").replace("explain", "").replace("definition of", "")
+    return [q.strip().capitalize() for q in re.split(r'\s*(?:and|,|;)\s*', query) if q.strip()]
+
+
+#  Helper: Summarize web result
+def simple_summarize(text: str, num_sentences: int = 3):
+    sents = re.split(r'(?<=[\.!?])\s+', text.strip())
+    return " ".join(sents[:num_sentences])
+
+
+#  Main retrieval function for single query
 def retrieve(query: str) -> dict:
-    query = query.strip()
-    if len(query) < 3:
+    original_query = query.strip()
+    if len(original_query) < 3:
         return {
             "source": "None",
-            "text": "Could you please clarify your question with a few more words?"
+            "text": "Please enter a more specific question."
         }
 
-    q_lower = query.lower()
+    # Step 1: Clean the query of filler phrases
+    query_cleaned = original_query.lower()
+    query_cleaned = re.sub(
+        r"(what is|explain|tell me about|give me info about|info of|definition of|define|meaning of|describe)", 
+        "", 
+        query_cleaned
+    ).strip()
 
-    # — Exact-match lookup first —
-    if q_lower in entry_dict:
+    # Step 2: Exact match
+    if query_cleaned in entry_dict:
         return {
             "source": "PDF",
-            "term": query,
-            "text": entry_dict[q_lower]
+            "term": query_cleaned,
+            "text": entry_dict[query_cleaned]
         }
 
-    # — Semantic search fallback —
-    q_vec = embedder.encode([query])
+    # Step 3: Partial match
+    for term in entry_dict.keys():
+        if term in query_cleaned:
+            return {
+                "source": "PDF",
+                "term": term,
+                "text": entry_dict[term]
+            }
+
+    # Step 4: Semantic search
+    q_vec = embedder.encode([original_query])
     faiss.normalize_L2(q_vec)
     D, I = index.search(q_vec, k=3)
+
     if D[0][0] >= 0.65:
         snippet = entries[I[0][0]]
         term, definition = snippet.split("\n", 1)
@@ -86,21 +94,35 @@ def retrieve(query: str) -> dict:
             "text": definition.strip()
         }
 
-    # — Last-resort: DuckDuckGo + light summarize (zero-cost) —
+    # Step 5: Web fallback
     with DDGS() as ddgs:
-        results = ddgs.text(keywords=query, max_results=3)
+        results = ddgs.text(keywords=original_query, max_results=3)
 
     if not results:
         return {
             "source": "None",
-            "text": f"Sorry, I couldn’t find information for “{query}.”"
+            "text": f"Sorry, I couldn’t find information for “{original_query}.”"
         }
 
     raw = results[0].get("body", "")
-    summary = simple_summarize(raw, num_sentences=3)
+    summary = simple_summarize(raw)
     link = results[0].get("href")
+
     return {
         "source": "Web",
-        "text": summary or "No concise summary available.",
+        "text": summary,
         "link": link
     }
+
+
+#  Multi-term query handler
+def retrieve_multiple(query: str):
+    if " and " in query or "," in query or ";" in query:
+        sub_queries = split_query(query)
+        results = []
+        for sub in sub_queries:
+            ans = retrieve(sub)
+            results.append((sub, ans))
+        return results
+    else:
+        return [(query, retrieve(query))]
