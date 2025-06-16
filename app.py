@@ -9,7 +9,7 @@ st.title("🔎 Liquide Glossary Search")
 # Helper to ignore page numbers or section labels
 def is_page_marker(s: str) -> bool:
     return bool(re.fullmatch(r"\d+\s*[A-Z]?", s.strip()))
-
+   
 query = st.text_input("Ask your question:")
 
 # If query exists, search and display results
