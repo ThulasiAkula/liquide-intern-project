@@ -5,7 +5,6 @@ import faiss
 from sentence_transformers import SentenceTransformer
 from duckduckgo_search import DDGS
 
-# File paths
 INDEX_PATH = "faiss.index"
 CHUNKS_PATH = "chunks.pkl"
 
@@ -25,16 +24,14 @@ for e in entries:
     definition = definition.strip()
     entry_dict[term_full.lower()] = definition
 
-    # Also support stripped versions like "EPS (Adjusted)" → "EPS"
     main = re.sub(r"\s*\(.*?\)", "", term_full).strip().lower()
     if main and main not in entry_dict:
         entry_dict[main] = definition
 
-# Load SentenceTransformer model
 embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
 
-#   Helper: Split multi-term queries
+#  Helper: Split multi-term queries
 def split_query(query: str):
     query = query.lower().replace("what is", "").replace("explain", "").replace("definition of", "")
     return [q.strip().capitalize() for q in re.split(r'\s*(?:and|,|;)\s*', query) if q.strip()]
@@ -55,7 +52,7 @@ def retrieve(query: str) -> dict:
             "text": "Please enter a more specific question."
         }
 
-    # Step 1: Clean the query of filler phrases
+    # Clean the query of filler phrases
     query_cleaned = original_query.lower()
     query_cleaned = re.sub(
         r"(what is|explain|tell me about|give me info about|info of|definition of|define|meaning of|describe)", 
@@ -63,7 +60,7 @@ def retrieve(query: str) -> dict:
         query_cleaned
     ).strip()
 
-    # Step 2: Exact match
+    # Exact match
     if query_cleaned in entry_dict:
         return {
             "source": "PDF",
@@ -71,7 +68,7 @@ def retrieve(query: str) -> dict:
             "text": entry_dict[query_cleaned]
         }
 
-    # Step 3: Partial match
+    # Partial match
     for term in entry_dict.keys():
         if term in query_cleaned:
             return {
@@ -80,7 +77,7 @@ def retrieve(query: str) -> dict:
                 "text": entry_dict[term]
             }
 
-    # Step 4: Semantic search
+    # Semantic search
     q_vec = embedder.encode([original_query])
     faiss.normalize_L2(q_vec)
     D, I = index.search(q_vec, k=3)
@@ -94,7 +91,7 @@ def retrieve(query: str) -> dict:
             "text": definition.strip()
         }
 
-    # Step 5: Web fallback
+    # Web fallback
     with DDGS() as ddgs:
         results = ddgs.text(keywords=original_query, max_results=3)
 

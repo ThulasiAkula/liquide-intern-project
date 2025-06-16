@@ -10,7 +10,6 @@ st.title("🔎 Liquide Glossary Search")
 def is_page_marker(s: str) -> bool:
     return bool(re.fullmatch(r"\d+\s*[A-Z]?", s.strip()))
 
-# Text input from user
 query = st.text_input("Ask your question:")
 
 # If query exists, search and display results

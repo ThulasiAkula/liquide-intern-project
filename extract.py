@@ -1,4 +1,3 @@
-# extract.py
 import pdfplumber
 
 def load_pdf(path: str) -> str:
